@@ -19,7 +19,7 @@
               Write-Output "OK: CPU al $cpu%"
           }
       register: cpu_check
-      failed_when: cpu_check.stdout
+      failed_when: "'ERROR' in cpu_check.stdout"
 
     # 2. CHEQUEAR SERVICIOS CRÍTICOS
     - name: Validar que servicios esenciales estén ejecutándose
@@ -44,7 +44,7 @@
               Write-Output "OK: Disco C: al $percentUsed%"
           }
       register: disco_check
-      failed_when: disco_check.host_out.contains("ERROR")
+      failed_when: "'ERROR' in disco_check.stdout"
 
     # 4. CREAR USUARIO 'ECUADOR'
     - name: Asegurar que el usuario 'ecuador' exista
@@ -70,7 +70,7 @@
     - name: Resumen de ejecución
       ansible.builtin.debug:
         msg: 
-          - "CPU: {{ cpu_check.host_out[0] }}"
+          - "CPU: {{ cpu_check.stdout }}"
           - "Disco: {{ disco_check.host_out[0] }}"
           - "Actualizaciones instaladas: {{ update_result.installed_update_count }}"
           - "Reinicio requerido: {{ update_result.reboot_required }}"
