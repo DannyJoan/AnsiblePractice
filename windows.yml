@@ -1,0 +1,81 @@
+---
+- name: Mantenimiento y Validación de Servidores Windows
+  hosts: os_windows
+  gather_facts: yes  # Activado para obtener info del sistema automáticamente
+  vars:
+    umbral_cpu: 85
+    umbral_disco: 80
+
+  tasks:
+    # 1. VALIDAR USO DE CPU
+    - name: Obtener uso promedio de CPU (últimos 5 segundos)
+      ansible.windows.win_powershell:
+        script: |
+          $cpu = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
+          if ($cpu -gt {{ umbral_cpu }}) {
+              Write-Output "ERROR: CPU al $cpu%"
+              exit 1
+          } else {
+              Write-Output "OK: CPU al $cpu%"
+          }
+      register: cpu_check
+      failed_when: cpu_check.host_out.contains("ERROR")
+
+    # 2. CHEQUEAR SERVICIOS CRÍTICOS
+    - name: Validar que servicios esenciales estén ejecutándose
+      ansible.windows.win_service:
+        name: "{{ item }}"
+        state: started
+      loop:
+        - Spooler  # Ejemplo: Cola de impresión
+        - LanmanServer # Ejemplo: Servidor de archivos (SMB)
+      register: service_status
+
+    # 3. ESPACIO EN DISCO (C:)
+    - name: Validar espacio en disco
+      ansible.windows.win_powershell:
+        script: |
+          $drive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+          $percentUsed = [Math]::Round((($drive.Size - $drive.FreeSpace) / $drive.Size) * 100, 2)
+          if ($percentUsed -gt {{ umbral_disco }}) {
+              Write-Output "ERROR: Disco C: al $percentUsed%"
+              exit 1
+          } else {
+              Write-Output "OK: Disco C: al $percentUsed%"
+          }
+      register: disco_check
+      failed_when: disco_check.host_out.contains("ERROR")
+
+    # 4. CREAR USUARIO 'ECUADOR'
+    - name: Asegurar que el usuario 'ecuador' exista
+      ansible.windows.win_user:
+        name: ecuador
+        password: "Cambiame123!" # Usa Ansible Vault para esto en producción
+        state: present
+        groups:
+          - Users
+          - Remote Desktop Users # Opcional: para que pueda entrar por RDP
+        fullname: "Usuario Ecuador"
+
+    # 5. ACTUALIZAR SISTEMA OPERATIVO
+    - name: Instalar todas las actualizaciones críticas y de seguridad
+      ansible.windows.win_updates:
+        category_names:
+          - CriticalUpdates
+          - SecurityUpdates
+        state: installed
+      register: update_result
+
+    # 6. REPORTE FINAL
+    - name: Resumen de ejecución
+      ansible.builtin.debug:
+        msg: 
+          - "CPU: {{ cpu_check.host_out[0] }}"
+          - "Disco: {{ disco_check.host_out[0] }}"
+          - "Actualizaciones instaladas: {{ update_result.installed_update_count }}"
+          - "Reinicio requerido: {{ update_result.reboot_required }}"
+
+    # Opcional: Reiniciar si las actualizaciones lo requieren
+    - name: Reiniciar si es necesario
+      ansible.windows.win_reboot:
+      when: update_result.reboot_required

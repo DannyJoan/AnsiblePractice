@@ -22,7 +22,20 @@
         fi
       register: validacion
       changed_when: false
- 
+    
+    - name: Crear usuario Ecuador
+      ansible.builtin.user:
+        name: Ecuador
+        state: present
+
+    - name: Listar todos los usuarios
+      ansible.builtin.command: cat /etc/passwd
+      register: usuarios
+
+    - name: Mostrar usuarios en pantalla
+      ansible.builtin.debug:
+        var: usuarios.stdout_lines
+
     - name: Mostrar resultado de validación
       ansible.builtin.debug:
         msg: "{{ validacion.stdout }}"
