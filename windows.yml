@@ -1,7 +1,7 @@
 ---
 - name: Mantenimiento y Validación de Servidores Windows
   hosts: os_windows
-  gather_facts: yes  # Activado para obtener info del sistema automáticamente
+  gather_facts: yes
   vars:
     umbral_cpu: 85
     umbral_disco: 80
@@ -19,7 +19,8 @@
               Write-Output "OK: CPU al $cpu%"
           }
       register: cpu_check
-      failed_when: cpu_check.stdout
+      # Corregido: Solo falla si la palabra ERROR aparece en la salida
+      failed_when: "'ERROR' in (cpu_check.output | join(' '))"
 
     # 2. CHEQUEAR SERVICIOS CRÍTICOS
     - name: Validar que servicios esenciales estén ejecutándose
@@ -27,8 +28,8 @@
         name: "{{ item }}"
         state: started
       loop:
-        - Spooler  # Ejemplo: Cola de impresión
-        - LanmanServer # Ejemplo: Servidor de archivos (SMB)
+        - Spooler
+        - LanmanServer
       register: service_status
 
     # 3. ESPACIO EN DISCO (C:)
@@ -44,17 +45,18 @@
               Write-Output "OK: Disco C: al $percentUsed%"
           }
       register: disco_check
-      failed_when: disco_check.host_out.contains("ERROR")
+      # Corregido: Cambiado .contains() por el operador 'in'
+      failed_when: "'ERROR' in (disco_check.output | join(' '))"
 
     # 4. CREAR USUARIO 'ECUADOR'
     - name: Asegurar que el usuario 'ecuador' exista
       ansible.windows.win_user:
         name: ecuador
-        password: "Cambiame123!" # Usa Ansible Vault para esto en producción
+        password: "Cambiame123!" 
         state: present
         groups:
-          - Users
-          - Remote Desktop Users # Opcional: para que pueda entrar por RDP
+          - Usuarios  # Nota: En Windows en español el grupo es "Usuarios", no "Users"
+          - Usuarios de escritorio remoto
         fullname: "Usuario Ecuador"
 
     # 5. ACTUALIZAR SISTEMA OPERATIVO
@@ -70,12 +72,12 @@
     - name: Resumen de ejecución
       ansible.builtin.debug:
         msg: 
-          - "CPU: {{ cpu_check.host_out[0] }}"
-          - "Disco: {{ disco_check.host_out[0] }}"
-          - "Actualizaciones instaladas: {{ update_result.installed_update_count }}"
-          - "Reinicio requerido: {{ update_result.reboot_required }}"
+          # Accedemos de forma segura al primer elemento de la lista output
+          - "CPU: {{ cpu_check.output | first | default('Sin datos') }}"
+          - "Disco: {{ disco_check.output | first | default('Sin datos') }}"
+          - "Actualizaciones instaladas: {{ update_result.installed_update_count | default(0) }}"
+          - "Reinicio requerido: {{ update_result.reboot_required | default(false) }}"
 
-    # Opcional: Reiniciar si las actualizaciones lo requieren
     - name: Reiniciar si es necesario
       ansible.windows.win_reboot:
-      when: update_result.reboot_required
+      when: update_result.reboot_required | default(false)
