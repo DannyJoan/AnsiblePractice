@@ -1,0 +1,74 @@
+- name: Validacion y mantenimiento RHEL
+  hosts: os_linux
+  become: yes
+  vars:
+    usuario_nuevo: ecuador
+    servicios_criticos:
+      - sshd
+      - crond
+      - rsyslog
+    espacio_minimo_mb: 1024
+  tasks:
+    - name: Obtener informacion de discos
+      setup:
+        gather_subset:
+          - hardware
+    - name: Validar espacio disponible en /
+      set_fact:
+        espacio_disponible: "{{ (ansible_mounts | selectattr('mount', 'equalto', '/') | list)[0].size_available // 1024 // 1024 }}"
+    - name: Mostrar espacio disponible
+      debug:
+        msg: "Espacio disponible en /: {{ espacio_disponible }} MB"
+    - name: Fallar si no hay espacio suficiente
+      fail:
+        msg: "Espacio insuficiente: {{ espacio_disponible }} MB"
+      when: espacio_disponible < espacio_minimo_mb
+    - name: Obtener estado de servicios
+      service_facts:
+    - name: Validar servicios criticos activos
+      fail:
+        msg: "Servicio {{ item }} NO esta corriendo"
+      when: services[item].state != "running"
+      loop: "{{ servicios_criticos }}"
+      ignore_errors: yes
+    - name: Crear usuario ecuador
+      user:
+        name: "{{ usuario_nuevo }}"
+        shell: /bin/bash
+        create_home: yes
+        state: present
+    - name: Configurar contraseña
+      user:
+        name: "{{ usuario_nuevo }}"
+        password: "{{ 'Ecuador123!' | password_hash('sha512') }}"
+    - name: Agregar a wheel (sudo en RHEL)
+      user:
+        name: "{{ usuario_nuevo }}"
+        groups: wheel
+        append: yes
+    - name: Asegurar que wheel tenga sudo
+      lineinfile:
+        path: /etc/sudoers
+        regexp: '^%wheel'
+        line: '%wheel ALL=(ALL) NOPASSWD: ALL'
+        validate: 'visudo -cf %s'
+    - name: Limpiar cache yum
+      command: yum clean all
+    - name: Actualizar todo el sistema
+      yum:
+        name: "*"
+        state: latest
+    - name: Verificar si requiere reboot
+      command: needs-restarting -r
+      register: reboot_required
+      failed_when: false
+      changed_when: reboot_required.rc != 0
+    - name: Reiniciar servidor si es necesario
+      reboot:
+        msg: "Reinicio por actualizacion del sistema"
+        connect_timeout: 5
+        reboot_timeout: 600
+      when: reboot_required.rc != 0
+    - name: Mensaje final
+      debug:
+        msg: "OK: Validaciones completas, usuario creado y sistema actualizado"
