@@ -19,7 +19,7 @@
               Write-Output "OK: CPU al $cpu%"
           }
       register: cpu_check
-      failed_when: cpu_check.host_out.contains("ERROR")
+      failed_when: cpu_check.stdout
 
     # 2. CHEQUEAR SERVICIOS CRÍTICOS
     - name: Validar que servicios esenciales estén ejecutándose
